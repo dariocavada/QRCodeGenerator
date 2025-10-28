@@ -9,6 +9,7 @@ import { GithubIcon, SparklesIcon } from './components/icons';
 
 const App: React.FC = () => {
   const [url, setUrl] = useState<string>('');
+  const [logo, setLogo] = useState<string | null>(null);
   const [qrCodeResult, setQrCodeResult] = useState<QRCodeResult | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,6 +22,93 @@ const App: React.FC = () => {
       return false;
     }
   };
+  
+  const handleLogoChange = (file: File | null) => {
+    setError(null);
+    if (!file) {
+      setLogo(null);
+      return;
+    }
+    // Simple validation for file size (e.g., 1MB)
+    if (file.size > 1024 * 1024) {
+      setError('Logo image must be smaller than 1MB.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setLogo(reader.result as string);
+    };
+    reader.onerror = () => {
+        setError('Failed to read the logo file.');
+    }
+    reader.readAsDataURL(file);
+  };
+
+  const createQRCodeWithLogo = (url: string, logoDataUrl: string | null): Promise<string> => {
+    const canvas = document.createElement('canvas');
+
+    return new Promise((resolve, reject) => {
+      qrcode.toCanvas(canvas, url, {
+        errorCorrectionLevel: 'H',
+        margin: 2,
+        width: 512,
+        color: {
+          dark: '#000000',
+          light: '#FFFFFF',
+        },
+      }, (err) => {
+        if (err) return reject(err);
+
+        if (!logoDataUrl) {
+          resolve(canvas.toDataURL('image/png'));
+          return;
+        }
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('Could not get canvas context'));
+
+        const logoImg = new Image();
+        logoImg.src = logoDataUrl;
+
+        logoImg.onload = () => {
+          const logoSize = canvas.width / 4.5;
+          const logoX = (canvas.width - logoSize) / 2;
+          const logoY = (canvas.height - logoSize) / 2;
+
+          const bgPadding = 4;
+          const bgSize = logoSize + bgPadding * 2;
+          const bgX = logoX - bgPadding;
+          const bgY = logoY - bgPadding;
+
+          ctx.save();
+          ctx.fillStyle = '#FFFFFF';
+          ctx.beginPath();
+          const cornerRadius = 8;
+          ctx.moveTo(bgX + cornerRadius, bgY);
+          ctx.lineTo(bgX + bgSize - cornerRadius, bgY);
+          ctx.quadraticCurveTo(bgX + bgSize, bgY, bgX + bgSize, bgY + cornerRadius);
+          ctx.lineTo(bgX + bgSize, bgY + bgSize - cornerRadius);
+          ctx.quadraticCurveTo(bgX + bgSize, bgY + bgSize, bgX + bgSize - cornerRadius, bgY + bgSize);
+          ctx.lineTo(bgX + cornerRadius, bgY + bgSize);
+          ctx.quadraticCurveTo(bgX, bgY + bgSize, bgX, bgY + bgSize - cornerRadius);
+          ctx.lineTo(bgX, bgY + cornerRadius);
+          ctx.quadraticCurveTo(bgX, bgY, bgX + cornerRadius, bgY);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+
+          ctx.drawImage(logoImg, logoX, logoY, logoSize, logoSize);
+          
+          resolve(canvas.toDataURL('image/png'));
+        };
+
+        logoImg.onerror = (error) => {
+          reject(new Error("Failed to load logo image. Please try another file."));
+        };
+      });
+    });
+  };
+
 
   const handleGenerate = useCallback(async () => {
     if (!url) {
@@ -39,26 +127,19 @@ const App: React.FC = () => {
 
     try {
       const [dataUrl, title] = await Promise.all([
-        qrcode.toDataURL(url, {
-          errorCorrectionLevel: 'H',
-          margin: 2,
-          width: 512,
-          color: {
-            dark: '#000000',
-            light: '#FFFFFF',
-          },
-        }),
+        createQRCodeWithLogo(url, logo),
         fetchPageTitle(url),
       ]);
       
       setQrCodeResult({ dataUrl, title, url });
     } catch (err) {
       console.error(err);
-      setError('Failed to generate QR code or fetch title. Please check the URL and try again.');
+      const errorMessage = err instanceof Error ? err.message : 'An unknown error occurred.';
+      setError(`Failed to generate QR code: ${errorMessage}`);
     } finally {
       setIsLoading(false);
     }
-  }, [url]);
+  }, [url, logo]);
 
   return (
     <div className="min-h-screen bg-base-100 text-text-primary flex flex-col items-center justify-center p-4 font-sans relative overflow-hidden">
@@ -83,6 +164,8 @@ const App: React.FC = () => {
             setUrl={setUrl}
             onSubmit={handleGenerate}
             isLoading={isLoading}
+            logo={logo}
+            onLogoChange={handleLogoChange}
           />
 
           {isLoading && (
