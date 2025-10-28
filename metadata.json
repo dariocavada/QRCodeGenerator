@@ -1,0 +1,5 @@
+{
+  "name": "AI QR Code Generator",
+  "description": "An intelligent QR code generator that uses AI to fetch the webpage title. Enter a URL to generate a QR code, view the page title, and download the image.",
+  "requestFramePermissions": []
+}
